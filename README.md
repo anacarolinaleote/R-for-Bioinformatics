@@ -1,6 +1,8 @@
 # R-for-Bioinformatics
 
-Example analyses of a small RNA-seq dataset to exemplify common challenges in the data that need to be taken into account.
+Example analyses of a small human RNA-seq dataset to exemplify common challenges in the data that need to be taken into account.
+
+Data and metadata available as R objects in the files`data.rds` and `metadata.rds`.
 
 sessionInfo() output:
 
@@ -29,3 +31,6 @@ loaded via a namespace (and not attached):
 [15] vctrs_0.4.0      ellipsis_0.3.2   tools_4.0.3      glue_1.6.2       munsell_0.5.0    xfun_0.30        compiler_4.0.3  
 [22] pkgconfig_2.0.3  colorspace_2.0-3 knitr_1.38       tibble_3.1.6    
 ```
+
+References:
+[1] Lonsdale, J., Thomas, J., Salvatore, M. et al. The Genotype-Tissue Expression (GTEx) project. Nat Genet 45, 580585 (2013). https://doi.org/10.1038/ng.2653
