@@ -1,0 +1,133 @@
+---
+title: "R for Bioinformatics"
+author: "Ana Carolina Leote"
+date: "4/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Matrix)
+library(ggplot2)
+```
+
+Here we use a toy RNA-seq dataset of 60 samples from human heart tissue. 30 of these samples come from young donors (20-29y) and the remaining 30 from old donors (60-69y). These samples are obtained from 2 different cohorts.
+
+We start by loading the data and corresponding metadata.
+```{r}
+# read data and metadata
+data <- readRDS("data.rds")
+metadata <- readRDS("metadata.rds")
+
+# remove genes not quantified in any sample
+data <- data[rowSums(data) > 0,]
+
+# check first entries of metadata
+head(metadata)
+```
+
+# Effect of total number of reads
+
+Here we exemplify the effect that the total number of reads in the sample has on the reads of a particular gene.
+```{r}
+# Pick example gene
+geneA <- "ENSG00000227232.4"
+
+plot.data <- data.frame("GeneA" = data[geneA,],
+                        "TotalReads" = colSums(data))
+
+ggplot(plot.data) +
+  geom_point(aes(x = TotalReads, y = GeneA), size = 3) +
+  xlab("Total reads") + ylab("Gene A reads") +
+  theme_classic() + theme(text = element_text(size = 20))
+```
+
+This can be solved by scaling each sample by it's total number of reads.
+```{r}
+# Scaling factor for each sample corresponds to million total reads in that sample
+scaling_factor <- colSums(data)/1000000
+
+# To scale the data, divide each column by the corresponding scaling factor
+norm_data <- sweep(data, 2, scaling_factor, "/")
+
+plot.data$NormGeneA <- norm_data[geneA,]
+
+ggplot(plot.data) +
+  geom_point(aes(x = TotalReads, y = NormGeneA), size = 3) +
+  xlab("Total reads") + ylab("Normalized gene A reads") +
+  theme_classic() + theme(text = element_text(size = 20))
+```
+
+The effect is now removed.
+
+# Effect of confounding variables
+
+Confounding variables cause variation in the data beyond the biologically interesting variation. In this case, the biologically interesting variation corresponds to the effect of age group (Young vs Old), but we have a confounding effect originating from the cohort samples are obtained from: 
+
+```{r echo=F}
+table(metadata$Cohort,metadata$AgeGroup)
+```
+
+The impact of this confounding effect is best seen with a Principal Component Analysis:
+
+```{r}
+# Principal Component Analysis for visualizing the impact of the confounding variable
+pca <- prcomp(t(norm_data), scale. = T)
+plot.data <- cbind.data.frame(plot.data,
+                              pca$x[,c("PC1","PC2")])
+plot.data$Cohort <- metadata$Cohort
+
+# Plot first 2 PCs and color points (samples) by corresponding cohort
+# Add % of variance explained by each PC in brackets
+ggplot(plot.data) +
+  geom_point(aes(x = PC1, y = PC2, color = Cohort), size = 3) +
+  xlab(paste0("PC 1 (",
+              round(((pca$sdev)^2)[1]/sum((pca$sdev)^2)*100,1), # *
+              "%)")) +
+  ylab(paste0("PC 2 (",
+              round(((pca$sdev)^2)[2]/sum((pca$sdev)^2)*100,1),
+              "%)")) +
+  theme_classic() + theme(text = element_text(size = 20),
+                          legend.position = "bottom",
+                          axis.ticks = element_blank(),
+                          axis.text = element_blank())
+
+# * standard deviation explained by each PC can be accessed by pca$sdev - square it for variance. The fraction of total variance explained by PC i then corresponds to (pca$sdev)^2)[i]/sum((pca$sdev)^2)
+```
+
+We can see samples from different cohorts separate relatively well in the PCA analysis, which means this is a source of variation in our data. In order to isolate the signal corresponding to the age effect, we need to remove this confounding signal.
+Removing the confounding signal can be achieved by simply regressing it out. That is, we fit a regression line for each gene, that quantifies the impact that the confounding variable has on the expression levels of that gene: Expr ~ Cohort
+
+```{r}
+corrected_data <- c()
+for(i in 1:nrow(norm_data)){
+  # Linear model for each gene: Expression ~ Confounding variable
+  # In our case, the confounding variable is the Cohort
+  # Save residuals of linear model as corrected data
+  corrected_data <- rbind(corrected_data,
+                          lm(norm_data[i,] ~ metadata$Cohort)$residuals)
+}
+```
+
+The residuals of this model for each gene contain the variation in the data that can't be explained by the confounding variable. This is where we expect the age signal to be.
+
+```{r}
+corrected_pca <- prcomp(t(corrected_data), scale. = T)
+plot.data$CorrectedPC1 <- corrected_pca$x[,"PC1"]
+plot.data$CorrectedPC2 <- corrected_pca$x[,"PC2"]
+
+ggplot(plot.data) +
+  geom_point(aes(x = CorrectedPC1, y = CorrectedPC2, color = Cohort), size = 3) +
+  xlab(paste0("PC 1 (",
+              round(((corrected_pca$sdev)^2)[1]/sum((corrected_pca$sdev)^2)*100,1),
+              "%)")) +
+  ylab(paste0("PC 2 (",
+              round(((corrected_pca$sdev)^2)[2]/sum((corrected_pca$sdev)^2)*100,1),
+              "%)")) +
+  theme_classic() + theme(text = element_text(size = 20),
+                          legend.position = "bottom",
+                          axis.ticks = element_blank(),
+                          axis.text = element_blank())
+```
+
+Now the Principal Component Analysis doesn't show such an effect from the confounding variable anymore - the data has been successfully corrected.
